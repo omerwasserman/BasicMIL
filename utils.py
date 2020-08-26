@@ -7,6 +7,14 @@ from typing import List, Tuple
 
 DATA_FILE = 'Data/data_dictionary.npy'
 
+def device_gpu_cpu():
+    USE_GPU = True
+    if USE_GPU and torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
+    return device
 
 def get_data(train_samples: int = 250) -> dict:
     """

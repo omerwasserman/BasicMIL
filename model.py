@@ -1,17 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-
-
-def device_gpu_cpu():
-    USE_GPU = True
-    if USE_GPU and torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
-
-    return device
 
 
 class Flatten(nn.Module):
@@ -21,6 +10,84 @@ class Flatten(nn.Module):
     def forward(self, x):
         N, C, H, W = x.size()  # read in N, C, H, W
         return x.view(N, -1)  # "flatten" the C * H * W values into a single vector per image
+
+
+class GatedAttention(nn.Module):
+    def __init__(self):
+        super(GatedAttention, self).__init__()
+        self.M = 500
+        self.L = 128
+        self.K = 1    # in the paper referred a 1.
+
+        self.feature_extractor = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),  # This layer don't change the size of input tiles.
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),  # This layer don't change the size of input tiles.
+            nn.ReLU(),
+            nn.BatchNorm2d(num_features=64),
+            nn.Dropout(0.25),
+            Flatten(),  # flattening from 7 X 7 X 64
+            nn.Linear(7 * 7 * 64, self.M),
+            nn.ReLU()
+        )
+
+        self.attention_V = nn.Sequential(
+            nn.Linear(self.M, self.L),
+            nn.Tanh()
+        )
+
+        self.attention_U = nn.Sequential(
+            nn.Linear(self.M, self.L),
+            nn.Sigmoid()
+        )
+
+        self.attention_weights = nn.Linear(self.L, self.K)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(self.M * self.K, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        x = x.squeeze(0)
+
+        H = self.feature_extractor(x)  # NxM
+        """H = H.view(-1, 50 * 4 * 4) 
+        H = self.feature_extractor_part2(H)  # NxL """
+
+        A_V = self.attention_V(H)  # NxL
+        A_U = self.attention_U(H)  # NxL
+        A = self.attention_weights(A_V * A_U)  # element wise multiplication # NxK
+        A = torch.transpose(A, 1, 0)  # KxN
+        A = F.softmax(A, dim=1)  # softmax over N
+
+        M = torch.mm(A, H)  # KxM
+
+        # Because this is a binary classifier, the output of it is one single number which can be interpreted as the
+        # probability that the input belong to class 1/TRUE (and not 0/FALSE)
+        Y_prob = self.classifier(M)
+
+        # The following line just turns probability to class.
+        Y_class = torch.ge(Y_prob, 0.5).float()
+        #Y_class = torch.tensor(Y_prob.data[0][0] < Y_prob.data[0][1]).float()
+
+        return Y_prob, Y_class, A
+
+    # AUXILIARY METHODS
+    def calculate_classification_error(self, X, Y):
+        Y = Y.float()
+        _, Y_hat, _ = self.forward(X)
+        error = 1. - Y_hat.eq(Y).cpu().float().mean().item()
+
+        return error, Y_hat
+
+    def calculate_objective(self, X, Y):
+        Y = Y.float()
+        Y_prob, _, A = self.forward(X)
+        Y_prob = torch.clamp(Y_prob, min=1e-5, max=1. - 1e-5)
+        neg_log_likelihood = -1. * (Y * torch.log(Y_prob) + (1. - Y) * torch.log(1. - Y_prob))  # negative log bernoulli
+
+        return neg_log_likelihood, A
 
 
 class Attention(nn.Module):
@@ -102,4 +169,3 @@ def model_1():
     return model
 
 
-model = nn.Sequential( )
