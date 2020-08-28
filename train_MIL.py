@@ -7,7 +7,9 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from typing import List, Tuple
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
+from PIL import Image
 
 
 def train(model: nn.Module, dloader_train: DataLoader, dloader_test: DataLoader):
@@ -75,29 +77,25 @@ def check_accuracy(model: nn.Module, data_loader: DataLoader):
 def inference_print_weights(model: nn.Module, data_loader: DataLoader, grid: List[Tuple]):
     model.eval()
     with torch.no_grad():
-        data, target, instance_locations = next(iter(data_loader))
-        data, target = data.to(device=DEVICE), target.to(device=DEVICE)
-        _, label, weights = model(data)
-        num_correct = (label == target).item()
-        weights = weights.cpu().numpy()
-        instance_locations = instance_locations.cpu().numpy()
+        for _, (data, target, instance_locations) in enumerate(data_loader):
+            #data, target, instance_locations = next(iter(data_loader))
+            data, target = data.to(device=DEVICE), target.to(device=DEVICE)
+            _, label, weights = model(data)
+            num_correct = (label == target).item()
+            weights = weights.cpu().numpy()
+            instance_locations = instance_locations.cpu().numpy()
 
-    print('Correct Labeling') if num_correct else print('Wrong Labeling')
-    heat_image, image = utils.weights_2_image(data.squeeze(0).cpu().numpy(), weights[0], instance_locations[0], grid)
+            print('Correct Labeling') if num_correct else print('Wrong Labeling')
+            heat_image, image = utils.weights_2_image(data.squeeze(0).cpu().numpy(), weights[0], instance_locations[0], grid)
+            heat_image /= heat_image.max()
 
-    plt.figure(0)
-    plt.subplot(1, 2, 1)
-    plt.imshow(image[0, :, :], cmap='gray')
-    plt.subplot(1, 2, 2)
-    plt.imshow(heat_image, cmap='hot', interpolation='nearest')
-    plt.colorbar()  # TODO: THIS line is new . CHECK it!
+            heat = np.zeros((28, 28, 3), dtype=int)
+            heat[:, :, 0] = np.uint8(heat_image * 255)
+            heat[:, :, 2] = np.uint8(255 - image[0, :, :])
 
-    plt.figure(1)
-    sns.heatmap(heat_image, linewidth=0.5)
-    plt.show()
-
-
-
+            plt.imshow(heat)
+            plt.title('CORRECT Labeling') if num_correct else plt.title('WRONG labeling')
+            plt.show()
 
 
 ##################################################################################################
@@ -144,7 +142,7 @@ if not infer:
     print('The model gets test set accuracy of {:.2f} %'.format(test_acc_final * 100))
 
     # Save model to file:
-    torch.save(best_model.state_dict(), 'models/model.pt')
+    torch.save(best_model.state_dict(), 'models/model_basic_2.pt')
     print(' Training is done!')
     print('model is saved')
 else:
@@ -153,5 +151,7 @@ else:
     model = model.GatedAttention()
     model.load_state_dict(torch.load('models/model.pt'))
     model.eval()
+
     # Print image with weights:
-    inference_print_weights(model, test_loader, grid)
+    inference_loader = DataLoader(test_dset, batch_size=1, shuffle=True)
+    inference_print_weights(model, inference_loader, grid)

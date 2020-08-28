@@ -19,7 +19,25 @@ class GatedAttention(nn.Module):
         self.L = 128
         self.K = 1    # in the paper referred a 1.
 
-        self.feature_extractor = nn.Sequential(
+        self.feature_extractor_basic_2 = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),  # This layer don't change the size of input tiles.
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),  # This layer don't change the size of input tiles.
+            nn.ReLU(),
+            nn.BatchNorm2d(num_features=64),
+            nn.Dropout(0.25),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),  # This layer don't change the size of input tiles.
+            nn.ReLU(),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),  # This layer don't change the size of input tiles.
+            nn.ReLU(),
+            nn.BatchNorm2d(num_features=128),
+            nn.Dropout(0.25),
+            Flatten(),  # flattening from 7 X 7 X 64
+            nn.Linear(7 * 7 * 128, self.M),
+            nn.ReLU()
+        )
+
+        self.feature_extractor_basic_1 = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, padding=1),  # This layer don't change the size of input tiles.
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, padding=1),  # This layer don't change the size of input tiles.
@@ -51,7 +69,7 @@ class GatedAttention(nn.Module):
     def forward(self, x):
         x = x.squeeze(0)
 
-        H = self.feature_extractor(x)  # NxM
+        H = self.feature_extractor_basic_2(x)  # NxM
         """H = H.view(-1, 50 * 4 * 4) 
         H = self.feature_extractor_part2(H)  # NxL """
 
