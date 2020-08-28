@@ -7,6 +7,29 @@ from typing import List, Tuple
 
 DATA_FILE = 'Data/data_dictionary.npy'
 
+def weights_2_image(data: np.ndarray, weights: np.ndarray, locations: np.ndarray, grid: List[Tuple]):
+    """
+    This function creates a heat map from the weights and their locations
+    :param weights:
+    :param locations:
+    :return:
+    """
+    locations = locations.tolist()
+    heat_image = np.zeros((28, 28))
+    image = np.zeros((data.shape[1], 28, 28))
+    tile_size = 7
+    for idx, loc in enumerate(grid):
+        try:
+            array_loc = locations.index(idx)
+            weight = weights[array_loc]
+            heat_image[loc[0]: loc[0] + tile_size, loc[1]: loc[1] + tile_size] = weight
+            image[:, loc[0]: loc[0] + tile_size, loc[1]: loc[1] + tile_size] = data[array_loc, :, :, :]
+        except:
+            image[:, loc[0]: loc[0] + tile_size, loc[1]: loc[1] + tile_size] = 255
+
+    return heat_image, image
+
+
 def device_gpu_cpu():
     USE_GPU = True
     if USE_GPU and torch.cuda.is_available():
@@ -15,6 +38,7 @@ def device_gpu_cpu():
         device = torch.device('cpu')
 
     return device
+
 
 def get_data(train_samples: int = 250) -> dict:
     """
@@ -73,7 +97,7 @@ def get_data(train_samples: int = 250) -> dict:
             'train_labels': labels_train,
             'test_images': all_test_tiles,
             'test_labels': labels_test}
-    return data
+    return data, grid
 
 
 def _make_bag(img_tiles: np.ndarray, num_tiles: tuple = (16, 16), label: np.ndarray = None):
@@ -87,7 +111,7 @@ def _make_bag(img_tiles: np.ndarray, num_tiles: tuple = (16, 16), label: np.ndar
     """
 
     # Removing tiles containing only background:
-    img_tiles = _remove_bakground_tiles(img_tiles)
+    img_tiles, idxs = _remove_bakground_tiles(img_tiles)
     img_tile_num = img_tiles.shape[0]
 
     # if the number of tiles for the current image is less than the number of tiles we want inside the bag,
@@ -100,11 +124,12 @@ def _make_bag(img_tiles: np.ndarray, num_tiles: tuple = (16, 16), label: np.ndar
     # Randomly creating indices of tiles to be inserted into bag:
     instances_num = np.random.randint(num_tiles[0], num_tiles[1] + 1)  # Number of instances to be in bag
     idx = sample(range(img_tile_num), instances_num)  # Create the indices of the instances to be inserted
+    instance_location_in_bag = np.array(idxs)[idx]
 
     # We'll now put the tiles in a bag:
     bag = img_tiles[idx, :, :, :]
 
-    return bag
+    return bag, instance_location_in_bag
 
 
 def _remove_bakground_tiles(tiles: np.ndarray) -> np.ndarray:
@@ -116,7 +141,7 @@ def _remove_bakground_tiles(tiles: np.ndarray) -> np.ndarray:
     mean_val = tiles.mean(axis=(1, 2, 3))
     idx = np.where(mean_val != 255)[0].tolist()
     new_tiles = tiles[idx, :, :, :]
-    return new_tiles
+    return new_tiles, idx
 
 
 def _make_tiles_all(data: np.ndarray, instance_num: int, grid: List[Tuple], tile_size: int) -> np.ndarray:
@@ -151,7 +176,7 @@ class MnistMILdataset(Dataset):
 
     def __getitem__(self, idx):
         tiles = self.all_image_tiles[idx]
-        x = _make_bag(tiles)
+        x, instance_locations = _make_bag(tiles)
         y = self.labels[idx]
 
         shape = x.shape
@@ -162,4 +187,4 @@ class MnistMILdataset(Dataset):
             for i in range(x.shape[0]):
                 X[i] = self.transform(x[i])
 
-        return X, y
+        return X, y, instance_locations
